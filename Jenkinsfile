@@ -14,44 +14,22 @@ pipeline {
             }
         }
 
-        stage('Terraform Init') {
+        // Wrap Terraform stages with AWS plugin credentials
+        stage('Terraform Init & Plan & Apply') {
             steps {
-                dir("${TF_DIR}") {
-                    sh 'terraform init'
-                }
-            }
-        }
+                withAWS(credentials: 'aws-access-key-id', region: "${AWS_DEFAULT_REGION}") {
+                    dir("${TF_DIR}") {
+                        withCredentials([string(credentialsId: 'dev-tfvars', variable: 'TFVARS_CONTENT')]) {
+                            sh '''
+                            # Convert single-line secret into proper multi-line .tfvars
+                            echo "$TFVARS_CONTENT" | sed 's/\\s\\+bucket_name/\\nbucket_name/' | sed 's/\\s\\+environment/\\nenvironment/' > temp.tfvars
 
-        stage('Terraform Validate') {
-            steps {
-                dir("${TF_DIR}") {
-                    sh 'terraform validate'
-                }
-            }
-        }
-
-        stage('Terraform Plan') {
-            steps {
-                dir("${TF_DIR}") {
-                    withCredentials([string(credentialsId: 'dev-tfvars', variable: 'TFVARS_CONTENT')]) {
-                        sh '''
-                        # Convert single-line secret into proper multi-line .tfvars
-                        echo "$TFVARS_CONTENT" | sed 's/\\s\\+bucket_name/\\nbucket_name/' | sed 's/\\s\\+environment/\\nenvironment/' > temp.tfvars
-                        terraform plan -var-file=temp.tfvars -out=tfplan
-                        '''
-                    }
-                }
-            }
-        }
-                
-        stage('Terraform Apply') {
-            steps {
-                dir("${TF_DIR}") {
-                    withCredentials([string(credentialsId: 'dev-tfvars', variable: 'TFVARS_CONTENT')]) {
-                        sh '''
-                        echo "$TFVARS_CONTENT" | sed 's/\\s\\+bucket_name/\\nbucket_name/' | sed 's/\\s\\+environment/\\nenvironment/' > temp.tfvars
-                        terraform apply -var-file=temp.tfvars -auto-approve tfplan
-                        '''
+                            terraform init
+                            terraform validate
+                            terraform plan -var-file=temp.tfvars -out=tfplan
+                            terraform apply -var-file=temp.tfvars -auto-approve tfplan
+                            '''
+                        }
                     }
                 }
             }
@@ -59,30 +37,36 @@ pipeline {
 
         stage('Get Bucket Name') {
             steps {
-                script {
-                    env.S3_BUCKET = sh(
-                        script: "cd ${TF_DIR} && terraform output -raw bucket_name",
-                        returnStdout: true
-                    ).trim()
+                dir("${TF_DIR}") {
+                    script {
+                        env.S3_BUCKET = sh(
+                            script: 'terraform output -raw bucket_name',
+                            returnStdout: true
+                        ).trim()
+                    }
                 }
             }
         }
 
         stage('Upload Website Files') {
             steps {
-                sh 'aws s3 sync ${WEBSITE_DIR}/ s3://${S3_BUCKET} --delete'
+                // Wrap AWS CLI with the same AWS credentials
+                withAWS(credentials: 'aws-access-key-id', region: "${AWS_DEFAULT_REGION}") {
+                    sh 'aws s3 sync ${WEBSITE_DIR}/ s3://${S3_BUCKET} --delete'
+                }
             }
         }
 
         stage('Show Website URL') {
             steps {
-                script {
-                    env.WEBSITE_URL = sh(
-                        script: "cd ${TF_DIR} && terraform output -raw website_url",
-                        returnStdout: true
-                    ).trim()
-
-                    echo "Website URL: http://${WEBSITE_URL}"
+                dir("${TF_DIR}") {
+                    script {
+                        env.WEBSITE_URL = sh(
+                            script: 'terraform output -raw website_url',
+                            returnStdout: true
+                        ).trim()
+                        echo "Website URL: http://${WEBSITE_URL}"
+                    }
                 }
             }
         }

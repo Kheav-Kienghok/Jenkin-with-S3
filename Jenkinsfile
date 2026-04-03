@@ -34,9 +34,8 @@ pipeline {
             steps {
                 dir("${TF_DIR}") {
                     withCredentials([string(credentialsId: 'dev-tfvars', variable: 'TFVARS_CONTENT')]) {
-                        // Create a temporary .tfvars file
                         sh '''
-                        echo "$TFVARS_CONTENT" > temp.tfvars
+                        printf "%s\n" "$TFVARS_CONTENT" > temp.tfvars
                         terraform plan -var-file=temp.tfvars -out=tfplan
                         '''
                     }
@@ -49,8 +48,8 @@ pipeline {
                 dir("${TF_DIR}") {
                     withCredentials([string(credentialsId: 'dev-tfvars', variable: 'TFVARS_CONTENT')]) {
                         sh '''
-                        echo "$TFVARS_CONTENT" > temp.tfvars
-                        terraform apply -var-file=temp.tfvars -auto-approve tfplan
+                        printf "%s\n" "$TFVARS_CONTENT" > temp.tfvars
+                        terraform plan -var-file=temp.tfvars -out=tfplan
                         '''
                     }
                 }

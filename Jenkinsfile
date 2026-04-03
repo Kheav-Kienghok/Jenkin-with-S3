@@ -35,21 +35,22 @@ pipeline {
                 dir("${TF_DIR}") {
                     withCredentials([string(credentialsId: 'dev-tfvars', variable: 'TFVARS_CONTENT')]) {
                         sh '''
-                        printf "%s\n" "$TFVARS_CONTENT" > temp.tfvars
+                        # Convert single-line secret into proper multi-line .tfvars
+                        echo "$TFVARS_CONTENT" | sed 's/\\s\\+bucket_name/\\nbucket_name/' | sed 's/\\s\\+environment/\\nenvironment/' > temp.tfvars
                         terraform plan -var-file=temp.tfvars -out=tfplan
                         '''
                     }
                 }
             }
         }
-        
+                
         stage('Terraform Apply') {
             steps {
                 dir("${TF_DIR}") {
                     withCredentials([string(credentialsId: 'dev-tfvars', variable: 'TFVARS_CONTENT')]) {
                         sh '''
-                        printf "%s\n" "$TFVARS_CONTENT" > temp.tfvars
-                        terraform plan -var-file=temp.tfvars -out=tfplan
+                        echo "$TFVARS_CONTENT" | sed 's/\\s\\+bucket_name/\\nbucket_name/' | sed 's/\\s\\+environment/\\nenvironment/' > temp.tfvars
+                        terraform apply -var-file=temp.tfvars -auto-approve tfplan
                         '''
                     }
                 }

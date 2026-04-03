@@ -15,3 +15,10 @@ static-site-project/
 └── website/
     └── index.html
 ```
+
+
+```
+aws_region  = "us-east-1"
+bucket_name = "my-unique-static-site-bucket-12345"
+environment = "dev"
+```

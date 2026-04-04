@@ -19,20 +19,14 @@ environment = "dev"''',
 
     stages {
 
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
         stage('Check Tools') {
             steps {
-                sh '''
-                    set -e
-                    git --version
-                    terraform version
-                    aws --version
-                '''
+                sh '''#!/bin/bash
+set -euo pipefail
+git --version
+terraform version
+aws --version
+'''
             }
         }
 
@@ -43,20 +37,23 @@ environment = "dev"''',
                         string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
                         string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')
                     ]) {
-                        sh '''
-                            #!/bin/bash
-                            set -euo pipefail
-                            export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}"
-        
-                            cat > dev.tfvars <<EOF
-        ${TFVARS}
-        EOF
-        
-                            terraform init
-                            terraform validate
-                            terraform plan -var-file="dev.tfvars" -out=tfplan
-                            terraform apply -auto-approve tfplan
-                        '''
+                        sh '''#!/bin/bash
+set -euo pipefail
+export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}"
+
+# Test AWS credentials
+aws sts get-caller-identity
+
+# Write tfvars file
+cat > dev.tfvars <<EOF
+${TFVARS}
+EOF
+
+terraform init
+terraform validate
+terraform plan -var-file="dev.tfvars" -out=tfplan
+terraform apply -auto-approve tfplan
+'''
                     }
                 }
             }
@@ -71,20 +68,20 @@ environment = "dev"''',
                     ]) {
                         script {
                             env.S3_BUCKET = sh(
-                                script: '''
-                                    set -euo pipefail
-                                    export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}"
-                                    terraform output -raw bucket_name
-                                ''',
+                                script: '''#!/bin/bash
+set -euo pipefail
+export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}"
+terraform output -raw bucket_name
+''',
                                 returnStdout: true
                             ).trim()
 
                             env.WEBSITE_URL = sh(
-                                script: '''
-                                    set -euo pipefail
-                                    export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}"
-                                    terraform output -raw website_url
-                                ''',
+                                script: '''#!/bin/bash
+set -euo pipefail
+export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}"
+terraform output -raw website_url
+''',
                                 returnStdout: true
                             ).trim()
                         }
@@ -99,11 +96,11 @@ environment = "dev"''',
                     string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
                     string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')
                 ]) {
-                    sh '''
-                        set -euo pipefail
-                        export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}"
-                        aws s3 sync "${WEBSITE_DIR}/" "s3://${S3_BUCKET}" --delete
-                    '''
+                    sh '''#!/bin/bash
+set -euo pipefail
+export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}"
+aws s3 sync "${WEBSITE_DIR}/" "s3://${S3_BUCKET}" --delete
+'''
                 }
             }
         }
@@ -126,9 +123,9 @@ environment = "dev"''',
 
         always {
             dir("${TF_DIR}") {
-                sh '''
-                    rm -f dev.tfvars tfplan || true
-                '''
+                sh '''#!/bin/bash
+rm -f dev.tfvars tfplan || true
+'''
             }
         }
     }

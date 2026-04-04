@@ -1,6 +1,16 @@
 pipeline {
     agent any
 
+    parameters {
+        text(
+            name: 'TFVARS',
+            defaultValue: '''aws_region  = "us-east-1"
+bucket_name = "my-unique-static-site-bucket-12345"
+environment = "dev"''',
+            description: 'Terraform variables'
+        )
+    }
+
     environment {
         AWS_DEFAULT_REGION = 'us-east-1'
         TF_DIR             = 'terraform'
@@ -8,6 +18,7 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 checkout scm
@@ -29,19 +40,20 @@ pipeline {
             steps {
                 dir("${TF_DIR}") {
                     withCredentials([
-                        [
-                            $class: 'AmazonWebServicesCredentialsBinding',
-                            credentialsId: 'aws-jenkins-creds'
-                        ],
-                        file(credentialsId: 'dev-tfvars-file', variable: 'TFVARS_FILE')
+                        string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
+                        string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')
                     ]) {
                         sh '''
                             set -euo pipefail
                             export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}"
 
+                            cat > dev.tfvars <<EOF
+${TFVARS}
+EOF
+
                             terraform init
                             terraform validate
-                            terraform plan -var-file="$TFVARS_FILE" -out=tfplan
+                            terraform plan -var-file="dev.tfvars" -out=tfplan
                             terraform apply -auto-approve tfplan
                         '''
                     }
@@ -52,13 +64,14 @@ pipeline {
         stage('Read Terraform Outputs') {
             steps {
                 dir("${TF_DIR}") {
-                    withCredentials([[
-                        $class: 'AmazonWebServicesCredentialsBinding',
-                        credentialsId: 'aws-jenkins-creds'
-                    ]]) {
+                    withCredentials([
+                        string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
+                        string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                    ]) {
                         script {
                             env.S3_BUCKET = sh(
                                 script: '''
+                                    set -euo pipefail
                                     export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}"
                                     terraform output -raw bucket_name
                                 ''',
@@ -67,6 +80,7 @@ pipeline {
 
                             env.WEBSITE_URL = sh(
                                 script: '''
+                                    set -euo pipefail
                                     export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}"
                                     terraform output -raw website_url
                                 ''',
@@ -80,10 +94,10 @@ pipeline {
 
         stage('Upload Website Files') {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-jenkins-creds'
-                ]]) {
+                withCredentials([
+                    string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
                     sh '''
                         set -euo pipefail
                         export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}"
@@ -104,8 +118,17 @@ pipeline {
         success {
             echo 'Deployment completed successfully.'
         }
+
         failure {
             echo 'Deployment failed.'
+        }
+
+        always {
+            dir("${TF_DIR}") {
+                sh '''
+                    rm -f dev.tfvars tfplan || true
+                '''
+            }
         }
     }
 }

@@ -44,13 +44,14 @@ environment = "dev"''',
                         string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')
                     ]) {
                         sh '''
+                            #!/bin/bash
                             set -euo pipefail
                             export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}"
-
+        
                             cat > dev.tfvars <<EOF
-${TFVARS}
-EOF
-
+        ${TFVARS}
+        EOF
+        
                             terraform init
                             terraform validate
                             terraform plan -var-file="dev.tfvars" -out=tfplan
